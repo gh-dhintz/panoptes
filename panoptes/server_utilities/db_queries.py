@@ -210,7 +210,11 @@ def maintain_jobs(msg, wf_id):
 
 
 def get_db_jobs(workflow_id):
-    return WorkflowJobs.query.filter(WorkflowJobs.wf_id == workflow_id)
+    # Return jobs in execution order (first task -> last task). Snakemake assigns
+    # jobid in reverse-topological order, so it is NOT run order; order by the
+    # time each job started instead (ties broken by insertion id).
+    return WorkflowJobs.query.filter(WorkflowJobs.wf_id == workflow_id)\
+        .order_by(WorkflowJobs.started_at.asc(), WorkflowJobs.id.asc())
 
 
 def get_db_job_by_id(workflow_id, job_id):

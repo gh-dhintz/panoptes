@@ -156,3 +156,108 @@
 
 
 {% endblock %}
+
+{% block page_scripts %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script src="https://unpkg.com/vis-network@9.1.9/standalone/umd/vis-network.min.js"></script>
+<script>
+(function () {
+  // Three visualizations of this workflow's jobs, driven by the same data the
+  // jobs table uses (GET /api/workflow/<id>/jobs). Rendered lazily per tab
+  // because a canvas/network in a hidden Bootstrap tab pane has zero size.
+  const WF_ID = {{ workflow.id }};
+  const STATUS_COLOR = { Done: '#4dbd74', Error: '#f86c6b', Running: '#63c2de' };
+  const colorFor = s => STATUS_COLOR[s] || '#b0b0b0';
+  // Distinguish jobs fanned out from the same rule by their Snakemake wildcards,
+  // e.g. rule "query" with {cohort: targeted} -> "query [cohort=targeted]".
+  const label = r => {
+    const w = r.wildcards || {};
+    const keys = Object.keys(w);
+    return keys.length ? r.name + ' [' + keys.map(k => k + '=' + w[k]).join(', ') + ']' : r.name;
+  };
+  let dagDone = false, durDone = false;
+
+  function parse(jobs) {
+    const rows = jobs.map(j => ({
+      jobid: j.jobid, name: j.name || ('job ' + j.jobid), status: j.status,
+      wildcards: j.wildcards || {},
+      start: j.started_at ? new Date(j.started_at) : null,
+      end: j.completed_at ? new Date(j.completed_at) : null,
+      input: j.input || [], output: j.output || []
+    })).filter(r => r.start);
+    rows.sort((a, b) => (a.start - b.start) || (a.jobid - b.jobid));
+    return rows;
+  }
+
+  function renderGantt(rows, t0, nowMin) {
+    const data = rows.map(r => {
+      const s = (r.start - t0) / 60000;
+      const e = r.end ? (r.end - t0) / 60000 : nowMin;
+      return [s, Math.max(e, s + 0.05)];
+    });
+    new Chart(document.getElementById('ganttChart'), {
+      type: 'bar',
+      data: { labels: rows.map(r => label(r) + ' #' + r.jobid),
+              datasets: [{ data: data, backgroundColor: rows.map(r => colorFor(r.status)), borderWidth: 0 }] },
+      options: { indexAxis: 'y', responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { display: false },
+          tooltip: { callbacks: { label: c => { const v = c.raw;
+            return 'min ' + v[0].toFixed(2) + '–' + v[1].toFixed(2) + '  (' + (v[1] - v[0]).toFixed(2) + ' min)'; } } } },
+        scales: { x: { beginAtZero: true, title: { display: true, text: 'minutes since workflow start' } } } }
+    });
+  }
+
+  function renderDuration(rows) {
+    new Chart(document.getElementById('durationChart'), {
+      type: 'bar',
+      data: { labels: rows.map(r => label(r) + ' #' + r.jobid),
+              datasets: [{ data: rows.map(r => ((r.end || new Date()) - r.start) / 60000),
+                           backgroundColor: rows.map(r => colorFor(r.status)), borderWidth: 0 }] },
+      options: { indexAxis: 'y', responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { display: false } },
+        scales: { x: { beginAtZero: true, title: { display: true, text: 'duration (minutes)' } } } }
+    });
+  }
+
+  function renderDag(rows) {
+    // Edge a -> b when a's output file appears in b's input (inferred DAG).
+    const nodes = rows.map(r => ({ id: r.jobid, label: label(r) + '\n#' + r.jobid,
+      color: { background: colorFor(r.status), border: '#4f5d73' } }));
+    const edges = [];
+    for (const a of rows) {
+      if (!a.output.length) continue;
+      const outs = new Set(a.output);
+      for (const b of rows) {
+        if (a.jobid !== b.jobid && b.input.some(f => outs.has(f))) {
+          edges.push({ from: a.jobid, to: b.jobid, arrows: 'to' });
+        }
+      }
+    }
+    new vis.Network(document.getElementById('dagNetwork'),
+      { nodes: new vis.DataSet(nodes), edges: new vis.DataSet(edges) },
+      { layout: { hierarchical: { enabled: true, direction: 'LR', sortMethod: 'directed', nodeSpacing: 110, levelSeparation: 160 } },
+        physics: false, nodes: { shape: 'box', margin: 8, widthConstraint: { maximum: 160 } },
+        edges: { smooth: { type: 'cubicBezier' }, color: { color: '#a0a6b0' } },
+        interaction: { hover: true } });
+  }
+
+  document.addEventListener('DOMContentLoaded', function () {
+    fetch('/api/workflow/' + WF_ID + '/jobs')
+      .then(r => r.json())
+      .then(payload => {
+        const rows = parse(payload.jobs || []);
+        if (!rows.length) { return; }
+        const t0 = rows[0].start;
+        const nowMin = (Date.now() - t0) / 60000;
+        renderGantt(rows, t0, nowMin);            // active tab: render now
+        $('a[data-toggle="tab"]').on('shown.bs.tab', function (e) {
+          const tgt = $(e.target).attr('href');
+          if (tgt === '#pane-dag' && !dagDone) { renderDag(rows); dagDone = true; }
+          if (tgt === '#pane-duration' && !durDone) { renderDuration(rows); durDone = true; }
+        });
+      })
+      .catch(() => {});
+  });
+})();
+</script>
+{% endblock %}

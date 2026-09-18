@@ -25,6 +25,15 @@ app.jinja_env.globals.update(version=__version__)
 init_db()
 
 
+@app.teardown_appcontext
+def _shutdown_session(exception=None):
+    # The dev server is multi-threaded and db_session is a thread-local
+    # scoped_session. Without removing it after each request, every request
+    # thread holds a checked-out connection forever, exhausting the pool
+    # (5 + 10 overflow) and causing 30s waits -> client read-timeouts.
+    db_session.remove()
+
+
 # you can add @nocache in any endpoint to disable caching
 def nocache(view):
     @wraps(view)

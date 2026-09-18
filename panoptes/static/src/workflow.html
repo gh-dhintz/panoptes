@@ -84,36 +84,73 @@
 </div>
 {% endif %}
 
-<div class="card">
-  <div class="card-header"> workflow Jobs</div>
-  <div class="card-body">
-    <table id="jobsTable" class="fullTable table table-responsive-sm stripe table-outline mb-0">
-      <thead>
-      <tr>
-        <th class="text-center">Id</th>
-        <th class="text-center">Name</th>
-        <th class="text-center">Status</th>
-        <th class="text-center">Duration</th>
-      </tr>
-      </thead>
-      <tbody>
-      {% for job in get_jobs(workflow.id) %}
-      <tr class="tableRow">
-        <td >
-          <a href='/workflow/{{ job.workflow_id }}/job/{{ job.jobid }}'> {{ job.jobid }} </a>
-        </td>
-        <td class="nameColumn">
-          <a href='/workflow/{{ job.workflow_id }}/job/{{ job.jobid }}'> {{ job.name }} </a>
-        </td>
-        <td><span class="badge badge-{{ 'success' if job.status=='Done' else ('danger' if job.status=='Error' else ('info' if job.status=='Running' else 'light text-dark'))}}"> {{ job.status }} </span></td>
-        <td>
-         <a> {{ (job.completed_at-job.started_at)|formatdelta if job.completed_at else '-' }}</a>
-        </td>
-      </tr>
-      {% endfor %}
+<div class="row">
+  <div class="col-lg-6">
+    <div class="card">
+      <div class="card-header"> workflow Jobs</div>
+      <div class="card-body">
+        <table id="jobsTable" class="fullTable table table-responsive-sm stripe table-outline mb-0">
+          <thead>
+          <tr>
+            <th class="text-center">Id</th>
+            <th class="text-center">Name</th>
+            <th class="text-center">Status</th>
+            <th class="text-center">Duration</th>
+          </tr>
+          </thead>
+          <tbody>
+          {# jobs come from get_db_jobs() already ordered by start time; loop.index0
+             is the execution order, exposed via data-order so the (jobid) Id column
+             sorts first-task -> last-task by default instead of by jobid #}
+          {% for job in get_jobs(workflow.id) %}
+          <tr class="tableRow">
+            <td data-order="{{ loop.index0 }}">
+              <a href='/workflow/{{ job.workflow_id }}/job/{{ job.jobid }}'> {{ job.jobid }} </a>
+            </td>
+            <td class="nameColumn">
+              <a href='/workflow/{{ job.workflow_id }}/job/{{ job.jobid }}'> {{ job.name }}{% if job.wildcards %} <span class="text-muted small">[{{ job.wildcards.items()|map('join', '=')|join(', ') }}]</span>{% endif %}</a>
+            </td>
+            <td><span class="badge badge-{{ 'success' if job.status=='Done' else ('danger' if job.status=='Error' else ('info' if job.status=='Running' else 'light text-dark'))}}"> {{ job.status }} </span></td>
+            <td>
+             <a> {{ (job.completed_at-job.started_at)|formatdelta if job.completed_at else '-' }}</a>
+            </td>
+          </tr>
+          {% endfor %}
 
-      </tbody>
-    </table>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-lg-6">
+    <div class="card">
+      <div class="card-header">visualizations</div>
+      <div class="card-body">
+        <ul class="nav nav-tabs" id="vizTabs" role="tablist">
+          <li class="nav-item">
+            <a class="nav-link active" id="tab-timeline" data-toggle="tab" href="#pane-timeline" role="tab">Timeline</a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" id="tab-dag" data-toggle="tab" href="#pane-dag" role="tab">Dependency DAG</a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" id="tab-duration" data-toggle="tab" href="#pane-duration" role="tab">Rule durations</a>
+          </li>
+        </ul>
+        <div class="tab-content pt-3">
+          <div class="tab-pane fade show active" id="pane-timeline" role="tabpanel" aria-labelledby="tab-timeline">
+            <div style="height: 360px;"><canvas id="ganttChart"></canvas></div>
+          </div>
+          <div class="tab-pane fade" id="pane-dag" role="tabpanel" aria-labelledby="tab-dag">
+            <div id="dagNetwork" style="height: 360px; border: 1px solid #eee;"></div>
+          </div>
+          <div class="tab-pane fade" id="pane-duration" role="tabpanel" aria-labelledby="tab-duration">
+            <div style="height: 360px;"><canvas id="durationChart"></canvas></div>
+          </div>
+        </div>
+      </div>
+    </div>
   </div>
 </div>
 
